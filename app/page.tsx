@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db";
 import { SetupRequired } from "@/components/setup-required";
 import { RealWorkspace } from "@/components/real-workspace";
 import { analysisProviderConfigured } from "@/lib/analysis/provider-config";
+import { scheduleAutomaticAnalysis } from "@/lib/analysis/automatic";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 export default async function Page({
   searchParams,
 }: {
@@ -45,6 +47,9 @@ export default async function Page({
         </section>
       </main>
     );
+  if (analysisProviderConfigured()) {
+    scheduleAutomaticAnalysis(session.user.id);
+  }
   const [
     connection,
     emails,

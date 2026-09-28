@@ -94,14 +94,14 @@ To stop all AI calls immediately, remove or blank the selected provider's API ke
 
 AI analysis is disabled per user by default. The user must enable the workspace setting before any private message can be sent to the configured AI provider.
 
-For one selected message, MailShield may send:
+For each automatically analyzed message, MailShield may send:
 
 - sender, reply-to, subject, and up to 24,000 characters of server-normalized plain text;
 - extracted URLs and selected unverified headers;
 - attachment filename, MIME type, and size metadata;
 - deterministic findings.
 
-It does not send account tokens, sessions, database IDs, unrelated messages, raw HTML, the original EML file, or attachment bodies. The API request uses `store: false`. Users can analyze one message, delete a stored report, delete an uploaded EML record, disable future analysis, or delete all stored data.
+It does not send account tokens, sessions, database IDs, unrelated messages, raw HTML, the original EML file, or attachment bodies. The API request uses `store: false`. After consent is enabled, newly imported Gmail and EML messages are analyzed automatically. Users can reanalyze one message, delete a stored report, delete an uploaded EML record, disable future analysis, or delete all stored data.
 
 Emails and their dependent reports use the existing 30-day retention timestamp. Expired email is hidden immediately. Physical cleanup uses the protected `POST /api/cleanup` endpoint; no automatic scheduler is added in this phase.
 
@@ -119,7 +119,7 @@ Emails and their dependent reports use the existing 30-day retention timestamp. 
 
 Statuses include `NOT_ANALYZED`, `QUEUED`, `ANALYZING`, `COMPLETED`, `FAILED`, and `NEEDS_REVIEW`. A database status transition prevents duplicate concurrent analysis. A completed email is analyzed once unless the user explicitly chooses reanalysis, which creates a new report version rather than overwriting history.
 
-The batch action processes at most 10 unprocessed messages. The per-user daily limit defaults to 10 and is configurable from 1–25. There are no paid overages and no background worker.
+Automatic analysis processes pending messages with bounded concurrency after imports, uploads, consent changes, and workspace visits. The per-user daily limit defaults to 50 and is configurable from 1–50. There are no paid overages; work runs within the triggering Vercel request lifecycle rather than a permanent worker.
 
 ## Deterministic checks
 

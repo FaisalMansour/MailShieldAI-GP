@@ -76,7 +76,7 @@ model User {
   gmailConnection    GmailConnection?
   emails             StoredEmail[]
   analysisEnabled    Boolean          @default(false)
-  dailyAnalysisLimit Int              @default(10)
+  dailyAnalysisLimit Int              @default(50)
   reports            AnalysisReport[]
   notifications      Notification[]
   usageRecords       AnalysisUsage[]

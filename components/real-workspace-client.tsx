@@ -617,20 +617,18 @@ function SettingsView({
           <section className="panel report-section">
             <div className="connection-header">
               <span className="provider-icon"><BrainCircuit size={28} /></span>
-              <div><h2>AI analysis consent</h2><p>Explicit, reversible, and limited to messages you choose.</p></div>
+              <div><h2>Automatic AI analysis</h2><p>Explicit, reversible, and applied automatically to newly stored messages.</p></div>
               <span className={`badge ${aiConfigured && userSettings.analysisEnabled ? "low" : "unknown"}`}>
                 {!aiConfigured ? "AI not configured" : userSettings.analysisEnabled ? "Enabled" : "Consent required"}
               </span>
             </div>
-            <p>Analysis sends the selected message&apos;s safe text, relevant headers, URL metadata, attachment metadata, and deterministic findings. Tokens, session data, unrelated messages, raw HTML, and attachment bodies are excluded.</p>
+            <p>When enabled, every newly imported or uploaded message is queued automatically. Analysis sends that message&apos;s safe text, relevant headers, URL metadata, attachment metadata, and deterministic findings. Tokens, session data, unrelated messages, raw HTML, and attachment bodies are excluded.</p>
             <form className="settings-form" action="/api/analysis/consent" method="post">
               <label className="toggle-row"><input type="checkbox" name="analysisEnabled" defaultChecked={userSettings.analysisEnabled} /> Enable real AI analysis</label>
-              <label>Daily message limit <input type="number" name="dailyAnalysisLimit" min="1" max="25" defaultValue={userSettings.dailyAnalysisLimit} /></label>
+              <label>Daily message limit <input type="number" name="dailyAnalysisLimit" min="1" max="50" defaultValue={userSettings.dailyAnalysisLimit} /></label>
               <button className="button primary" type="submit">Save analysis settings</button>
             </form>
-            <div className="action-row">
-              <form action="/api/analysis/batch" method="post"><button className="button" type="submit" disabled={!aiConfigured || !userSettings.analysisEnabled}>Analyze all unprocessed emails (max 10)</button></form>
-            </div>
+            <p className="section-caption">Pending and failed messages are retried automatically when you open the workspace. You can still retry an individual failed report from its email page.</p>
           </section>
         </div>
         <aside>

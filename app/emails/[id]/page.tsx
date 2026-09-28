@@ -129,7 +129,7 @@ export default async function RealEmailPage({
       )}
 
       <div className="action-row report-actions">
-        {!report ? (
+        {!report && email.processingStatus === "FAILED" ? (
           <form action={`/api/analysis/${email.id}`} method="post">
             <button
               className="button primary"
@@ -137,12 +137,10 @@ export default async function RealEmailPage({
               disabled={!user?.analysisEnabled || !aiConfigured}
             >
               <BrainCircuit size={16} />
-              {email.processingStatus === "FAILED"
-                ? "Retry analysis"
-                : "Analyze email"}
+              Retry analysis now
             </button>
           </form>
-        ) : (
+        ) : report ? (
           <form action={`/api/analysis/${email.id}`} method="post">
             <input type="hidden" name="mode" value="reanalyze" />
             <button
@@ -153,6 +151,15 @@ export default async function RealEmailPage({
               Reanalyze with current version
             </button>
           </form>
+        ) : (
+          <span className="badge unknown">
+            {email.processingStatus === "QUEUED" ||
+            email.processingStatus === "ANALYZING"
+              ? "Automatic analysis in progress"
+              : user?.analysisEnabled && aiConfigured
+                ? "Automatic analysis pending"
+                : "Automatic analysis disabled"}
+          </span>
         )}
         {report && (
           <>

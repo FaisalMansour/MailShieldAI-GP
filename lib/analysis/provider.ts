@@ -8,6 +8,7 @@ import {
   analysisProviderConfigured,
   selectedAnalysisProvider,
 } from "./provider-config";
+import { parseProviderAnalysisResponse } from "./provider-response";
 
 export type ProviderResult = {
   report: AnalysisResponse;
@@ -116,8 +117,10 @@ class ResponsesAnalysisProvider implements AnalysisProvider {
             ? { ...request, store: false, reasoning: { effort: "none" } }
             : request,
         );
-        if (!response.output_parsed) throw new Error("AI_INVALID_OUTPUT");
-        const parsed = analysisResponseSchema.parse(response.output_parsed);
+        const parsed = parseProviderAnalysisResponse(
+          response.output_parsed,
+          response.output_text,
+        );
         const inputTokens = response.usage?.input_tokens ?? null;
         const outputTokens = response.usage?.output_tokens ?? null;
         return {
@@ -136,7 +139,20 @@ class ResponsesAnalysisProvider implements AnalysisProvider {
         lastError = error;
       }
     }
-    void lastError;
+    const detail = lastError as {
+      name?: string;
+      status?: number;
+      code?: string;
+      type?: string;
+    };
+    console.error("MailShield AI provider request failed", {
+      provider: this.providerName,
+      model: this.model,
+      name: detail?.name,
+      status: detail?.status,
+      code: detail?.code,
+      type: detail?.type,
+    });
     throw new Error("AI_ANALYSIS_FAILED");
   }
 }

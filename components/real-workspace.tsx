@@ -48,7 +48,7 @@ const notices: Record<string, string> = {
     "The Gmail synchronization baseline is unavailable. Reconnect Gmail to establish a new baseline.",
   "gmail-not-connected": "Connect or reconnect Gmail before syncing.",
   "analysis-enabled":
-    "AI analysis consent is enabled. Only messages you choose to analyze are sent.",
+    "AI analysis is enabled. New and pending messages are analyzed automatically within your daily limit.",
   "analysis-disabled":
     "Future AI analysis is disabled. Stored reports remain until you delete them.",
   "analysis-consent-required":
@@ -64,7 +64,7 @@ const notices: Record<string, string> = {
   "ai-analysis-failed":
     "The AI provider did not return a valid report. The message is marked failed and can be retried.",
   "eml-uploaded":
-    "The EML file was parsed and stored. The original upload was discarded.",
+    "The EML file was parsed and stored. Automatic analysis has started, and the original upload was discarded.",
   "invalid-eml-file": "The upload was not a valid supported EML message.",
   "eml-too-large": "The EML file exceeds the 5 MB upload limit.",
   "duplicate-eml": "That exact EML file has already been uploaded.",
@@ -87,7 +87,7 @@ function noticeText(value?: string) {
   if (notices[value]) return notices[value];
   const imported = value.match(/^imported-(\d+)-duplicates-(\d+)$/);
   if (imported)
-    return `Import finished: ${imported[1]} new emails stored and ${imported[2]} duplicates skipped.`;
+    return `Import finished: ${imported[1]} new emails stored and ${imported[2]} duplicates skipped. New messages are being analyzed automatically.`;
   const deleted = value.match(/^emails-deleted-(\d+)$/);
   if (deleted)
     return `Deleted ${deleted[1]} stored email${deleted[1] === "1" ? "" : "s"} from MailShield.`;
@@ -95,7 +95,7 @@ function noticeText(value?: string) {
     /^sync-(complete|partial)-(\d+)-(\d+)(-recovered)?$/,
   );
   if (sync)
-    return `${sync[1] === "partial" ? "This bounded sync has more changes; choose Continue sync." : "Sync finished."} ${sync[2]} new emails stored and ${sync[3]} duplicates skipped.${sync[4] ? " Gmail history had expired, so MailShield recovered from the latest 50 inbox messages." : ""}`;
+    return `${sync[1] === "partial" ? "This bounded sync has more changes; choose Continue sync." : "Sync finished."} ${sync[2]} new emails stored and ${sync[3]} duplicates skipped.${Number(sync[2]) ? " New messages are being analyzed automatically." : ""}${sync[4] ? " Gmail history had expired, so MailShield recovered from the latest 50 inbox messages." : ""}`;
   const batch = value.match(/^analysis-batch-(\d+)-(\d+)$/);
   if (batch)
     return `Analysis batch finished: ${batch[1]} completed and ${batch[2]} failed.`;

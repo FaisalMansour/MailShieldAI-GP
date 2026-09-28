@@ -2,7 +2,7 @@ export const CHECK_VERSION = "checks-1.0.0";
 export const PROMPT_VERSION = "email-security-1.0.0";
 export const SCORING_VERSION = "hybrid-1.0.0";
 export const ANALYSIS_BODY_LIMIT = 24_000;
-export const ANALYSIS_BATCH_LIMIT = 10;
+export const ANALYSIS_BATCH_LIMIT = 50;
 
 export type FindingSeverity = "LOW" | "MEDIUM" | "HIGH";
 

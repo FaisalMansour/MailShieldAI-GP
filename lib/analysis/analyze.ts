@@ -246,13 +246,20 @@ export async function analyzeUnprocessedBatch(
   });
   let completed = 0;
   let failed = 0;
-  for (const message of messages) {
-    try {
-      await analyzeStoredEmail(userId, message.id, { provider });
-      completed++;
-    } catch {
-      failed++;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < messages.length) {
+      const message = messages[cursor++];
+      try {
+        await analyzeStoredEmail(userId, message.id, { provider });
+        completed++;
+      } catch {
+        failed++;
+      }
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(3, messages.length) }, () => worker()),
+  );
   return { completed, failed };
 }

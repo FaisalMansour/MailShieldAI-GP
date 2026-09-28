@@ -23,6 +23,7 @@ import {
   configuredModelIdentifier,
   selectedAnalysisProvider,
 } from "../lib/analysis/provider-config";
+import { parseProviderAnalysisResponse } from "../lib/analysis/provider-response";
 
 const base = {
   sender: "Billing <billing@supplier.example>",
@@ -139,6 +140,31 @@ test("mock AI provider output is validated without spending API credits", async 
   assert.equal(
     analysisResponseSchema.parse(value).classification,
     "SUSPICIOUS",
+  );
+});
+
+test("compatible Responses APIs can be validated from output_text", () => {
+  const response = {
+    classification: "LEGITIMATE" as const,
+    estimatedRiskScore: 8,
+    severity: "LOW" as const,
+    confidence: "HIGH" as const,
+    overview: "No material threat indicators were found.",
+    observedEvidence: [],
+    interpretations: ["The message resembles a routine notification."],
+    suspiciousLocations: [],
+    possibleAttackMethod: "None observed",
+    recommendedActions: ["Continue normal caution."],
+    limitations: ["URLs and attachments were not opened."],
+    humanReviewRecommended: false,
+  };
+  assert.deepEqual(
+    parseProviderAnalysisResponse(null, JSON.stringify(response)),
+    response,
+  );
+  assert.throws(
+    () => parseProviderAnalysisResponse(null, "not json"),
+    /AI_INVALID_OUTPUT/,
   );
 });
 
