@@ -162,6 +162,13 @@ test("compatible Responses APIs can be validated from output_text", () => {
     parseProviderAnalysisResponse(null, JSON.stringify(response)),
     response,
   );
+  assert.deepEqual(
+    parseProviderAnalysisResponse(
+      null,
+      `\`\`\`json\n${JSON.stringify(response)}\n\`\`\``,
+    ),
+    response,
+  );
   assert.throws(
     () => parseProviderAnalysisResponse(null, "not json"),
     /AI_INVALID_OUTPUT/,
