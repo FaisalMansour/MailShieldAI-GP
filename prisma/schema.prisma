@@ -1,0 +1,382 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../lib/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GmailConnectionStatus {
+  CONNECTED
+  RECONNECT_REQUIRED
+  DISCONNECTED
+}
+
+enum EmailProcessingStatus {
+  NOT_ANALYZED
+  QUEUED
+  ANALYZING
+  COMPLETED
+  FAILED
+  NEEDS_REVIEW
+  PARSE_PARTIAL
+  PARSE_FAILED
+}
+
+enum EmailSource {
+  GMAIL
+  EML_UPLOAD
+}
+
+enum AnalysisClassification {
+  LEGITIMATE
+  SUSPICIOUS
+  PHISHING
+  IMPERSONATION
+  SCAM
+  MALWARE_RELATED
+  SPAM
+  UNCERTAIN
+}
+
+enum AnalysisSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AnalysisConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum EvidenceSource {
+  HEADER
+  SENDER
+  REPLY_TO
+  SUBJECT
+  BODY
+  URL
+  ATTACHMENT_METADATA
+  AUTHENTICATION_RESULT
+  DETERMINISTIC_CHECK
+}
+
+model User {
+  id                 String           @id @default(cuid())
+  name               String?
+  email              String?          @unique
+  emailVerified      DateTime?
+  image              String?
+  accounts           Account[]
+  sessions           Session[]
+  gmailConnection    GmailConnection?
+  emails             StoredEmail[]
+  analysisEnabled    Boolean          @default(false)
+  dailyAnalysisLimit Int              @default(10)
+  reports            AnalysisReport[]
+  notifications      Notification[]
+  usageRecords       AnalysisUsage[]
+  evaluationRuns     EvaluationRun[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model GmailConnection {
+  id                    String                @id @default(cuid())
+  userId                String                @unique
+  mailboxEmail          String                @unique
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  status                GmailConnectionStatus @default(CONNECTED)
+  historyId             String?
+  continuationPageToken String?
+  pendingHistoryId      String?
+  pendingMessageIds     Json                  @default("[]")
+  syncInProgress        Boolean               @default(false)
+  lastSyncAt            DateTime?
+  lastErrorCode         String?
+  lastErrorMessage      String?
+  connectedAt           DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails                StoredEmail[]
+}
+
+model StoredEmail {
+  id                String                @id @default(cuid())
+  userId            String
+  gmailConnectionId String?
+  gmailMessageId    String?
+  gmailThreadId     String?
+  source            EmailSource           @default(GMAIL)
+  contentHash       String?
+  uploadFileName    String?
+  uploadedAt        DateTime?
+  sender            String?
+  replyTo           String?
+  recipients        Json
+  subject           String?
+  receivedAt        DateTime?
+  plainTextBody     String
+  extractedLinks    Json
+  selectedHeaders   Json
+  processingStatus  EmailProcessingStatus @default(NOT_ANALYZED)
+  contentTruncated  Boolean               @default(false)
+  parseNote         String?
+  importedAt        DateTime              @default(now())
+  expiresAt         DateTime
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gmailConnection   GmailConnection?      @relation(fields: [gmailConnectionId], references: [id], onDelete: Cascade)
+  attachments       EmailAttachment[]
+  reports           AnalysisReport[]
+  notifications     Notification[]
+
+  @@unique([gmailConnectionId, gmailMessageId])
+  @@unique([userId, contentHash])
+  @@index([userId, expiresAt])
+  @@index([gmailConnectionId, receivedAt])
+}
+
+model EmailAttachment {
+  id            String      @id @default(cuid())
+  storedEmailId String
+  fileName      String
+  mimeType      String
+  sizeBytes     Int
+  storedEmail   StoredEmail @relation(fields: [storedEmailId], references: [id], onDelete: Cascade)
+
+  @@index([storedEmailId])
+}
+
+model AnalysisReport {
+  id                        String                 @id @default(cuid())
+  storedEmailId             String
+  userId                    String
+  version                   Int
+  classification            AnalysisClassification
+  aiScore                   Int
+  deterministicContribution Int
+  finalScore                Int
+  severity                  AnalysisSeverity
+  confidence                AnalysisConfidence
+  overview                  String
+  interpretations           Json
+  suspiciousLocations       Json
+  attackMethod              String
+  recommendedActions        Json
+  limitations               Json
+  humanReviewRecommended    Boolean                @default(false)
+  bodyTruncated             Boolean                @default(false)
+  checkVersion              String
+  promptVersion             String
+  scoringVersion            String
+  modelIdentifier           String
+  inputTokens               Int?
+  outputTokens              Int?
+  estimatedCostMicros       Int?
+  analyzedAt                DateTime               @default(now())
+  storedEmail               StoredEmail            @relation(fields: [storedEmailId], references: [id], onDelete: Cascade)
+  user                      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evidence                  AnalysisEvidence[]
+  findings                  DeterministicFinding[]
+  corrections               UserCorrection[]
+  notifications             Notification[]
+  usage                     AnalysisUsage?
+  evaluationResults         EvaluationResult[]
+
+  @@unique([storedEmailId, version])
+  @@index([userId, analyzedAt])
+  @@index([storedEmailId, analyzedAt])
+}
+
+model AnalysisEvidence {
+  id             String         @id @default(cuid())
+  reportId       String
+  source         EvidenceSource
+  label          String
+  exactValue     String
+  interpretation String?
+  report         AnalysisReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+model DeterministicFinding {
+  id              String           @id @default(cuid())
+  reportId        String
+  checkId         String
+  severity        AnalysisSeverity
+  explanation     String
+  supportingValue String
+  sourceField     String
+  checkVersion    String
+  report          AnalysisReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+model UserCorrection {
+  id              String         @id @default(cuid())
+  reportId        String
+  userId          String
+  markedNotThreat Boolean        @default(true)
+  note            String?
+  createdAt       DateTime       @default(now())
+  revertedAt      DateTime?
+  report          AnalysisReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([reportId, revertedAt])
+}
+
+model Notification {
+  id            String           @id @default(cuid())
+  userId        String
+  storedEmailId String
+  reportId      String
+  severity      AnalysisSeverity
+  title         String
+  message       String
+  createdAt     DateTime         @default(now())
+  readAt        DateTime?
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storedEmail   StoredEmail      @relation(fields: [storedEmailId], references: [id], onDelete: Cascade)
+  report        AnalysisReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AnalysisUsage {
+  id                  String         @id @default(cuid())
+  userId              String
+  reportId            String         @unique
+  usageDate           DateTime
+  analyzedMessages    Int            @default(1)
+  inputTokens         Int?
+  outputTokens        Int?
+  estimatedCostMicros Int?
+  createdAt           DateTime       @default(now())
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report              AnalysisReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usageDate])
+}
+
+model EvaluationDataset {
+  id          String           @id @default(cuid())
+  name        String
+  version     String
+  source      String
+  license     String
+  description String
+  createdAt   DateTime         @default(now())
+  cases       EvaluationCase[]
+  runs        EvaluationRun[]
+
+  @@unique([name, version])
+}
+
+model EvaluationCase {
+  id            String                 @id @default(cuid())
+  datasetId     String
+  itemId        String
+  subject       String
+  body          String
+  sender        String?
+  replyTo       String?
+  expectedClass AnalysisClassification
+  split         String
+  source        String
+  license       String
+  sanitization  String
+  dataset       EvaluationDataset      @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  results       EvaluationResult[]
+
+  @@unique([datasetId, itemId])
+  @@index([datasetId, split])
+}
+
+model EvaluationRun {
+  id              String             @id @default(cuid())
+  datasetId       String
+  userId          String?
+  modelIdentifier String
+  promptVersion   String
+  scoringVersion  String
+  datasetVersion  String
+  status          String
+  metrics         Json?
+  startedAt       DateTime           @default(now())
+  completedAt     DateTime?
+  dataset         EvaluationDataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  user            User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  results         EvaluationResult[]
+
+  @@index([datasetId, startedAt])
+}
+
+model EvaluationResult {
+  id                       String                  @id @default(cuid())
+  runId                    String
+  caseId                   String
+  reportId                 String?
+  predictedClass           AnalysisClassification?
+  finalScore               Int?
+  durationMs               Int
+  status                   String
+  errorCode                String?
+  classificationReasonable Boolean?
+  evidenceSupported        Boolean?
+  inventedClaims           Boolean?
+  actionsAppropriate       Boolean?
+  injectionIgnored         Boolean?
+  reviewNotes              String?
+  run                      EvaluationRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  case                     EvaluationCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  report                   AnalysisReport?         @relation(fields: [reportId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, caseId])
+  @@index([runId])
+}

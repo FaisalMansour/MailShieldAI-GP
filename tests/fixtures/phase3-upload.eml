@@ -1,0 +1,19 @@
+From: Accounts Team <alerts@external.example>
+Reply-To: capture@different.example
+To: student@example.edu
+Subject: URGENT account verification
+Date: Mon, 28 Sep 2026 10:00:00 +0000
+Message-ID: <phase3-upload@example.test>
+Authentication-Results: mx.example; spf=fail; dkim=pass; dmarc=fail
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="mailshield-boundary"
+
+--mailshield-boundary
+Content-Type: text/plain; charset="utf-8"
+
+Your account will be suspended within 2 hours. Verify your password at http://192.0.2.44/login immediately.
+--mailshield-boundary
+Content-Type: text/html; charset="utf-8"
+
+<p>Your account will be suspended.</p><a href="https://xn--paypl-3ve.example/login">https://paypal.example/login</a><img src="https://remote.example/pixel.png">
+--mailshield-boundary--

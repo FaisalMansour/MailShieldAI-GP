@@ -5,3 +5,9 @@ out/
 .sites-runtime/
 test-results/
 playwright-report/
+.openai/*-desktop.png
+.openai/*-mobile.png
+.env
+.env.local
+.env.*.local
+lib/generated/
