@@ -12,3 +12,4 @@ playwright-report/
 .env.*.local
 lib/generated/
 .neon
+.vercel
