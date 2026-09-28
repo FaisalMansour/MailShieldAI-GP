@@ -11,3 +11,4 @@ playwright-report/
 .env.local
 .env.*.local
 lib/generated/
+.neon
