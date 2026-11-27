@@ -195,14 +195,35 @@ export async function analyzeStoredEmail(
       }
       await tx.storedEmail.update({
         where: { id: email.id },
-        data: { processingStatus: needsReview ? "NEEDS_REVIEW" : "COMPLETED" },
+        data: {
+          processingStatus: needsReview ? "NEEDS_REVIEW" : "COMPLETED",
+          gmailLabelStatus: email.gmailConnectionId
+            ? "PENDING"
+            : "NOT_REQUIRED",
+          gmailLabelRetries: 0,
+          automaticAnalysisRetries: 0,
+          automaticAnalysisNextAt: null,
+        },
       });
+      if (email.gmailConnectionId)
+        await tx.gmailConnection.update({
+          where: { id: email.gmailConnectionId },
+          data: { lastAnalysisAt: now },
+        });
       return report;
     });
   } catch (error) {
     await prisma.storedEmail.updateMany({
       where: { id: email.id, userId, processingStatus: "ANALYZING" },
-      data: { processingStatus: "FAILED" },
+      data: {
+        processingStatus: "FAILED",
+        automaticAnalysisRetries: { increment: 1 },
+        automaticAnalysisNextAt: new Date(
+          Date.now() +
+            Math.min(60, 2 ** Math.min(email.automaticAnalysisRetries, 5)) *
+              60_000,
+        ),
+      },
     });
     throw error;
   }
@@ -234,6 +255,11 @@ export async function analyzeUnprocessedBatch(
       userId,
       expiresAt: { gt: new Date() },
       processingStatus: { in: ["NOT_ANALYZED", "FAILED", "PARSE_PARTIAL"] },
+      automaticAnalysisRetries: { lt: 4 },
+      OR: [
+        { automaticAnalysisNextAt: null },
+        { automaticAnalysisNextAt: { lte: new Date() } },
+      ],
     },
     select: { id: true },
     orderBy: { importedAt: "asc" },

@@ -21,7 +21,7 @@ export default async function Page({
       <main className="entry-shell">
         <section className="entry-card">
           <span className="brand-mark">MS</span>
-          <p className="eyebrow">MAILSHIELD AI · PHASE 3</p>
+          <p className="eyebrow">MAILSHIELD AI · PHASE 4</p>
           <h1>Private email security workspace</h1>
           <p>
             Sign in with Google to create your private MailShield account. Gmail
@@ -62,6 +62,8 @@ export default async function Page({
     notifications,
     dailyUsage,
     totalUsage,
+    latestSyncRun,
+    latestPush,
   ] = await Promise.all([
     prisma.gmailConnection.findUnique({ where: { userId: session.user.id } }),
     prisma.storedEmail.findMany({
@@ -137,6 +139,16 @@ export default async function Page({
         estimatedCostMicros: true,
       },
     }),
+    prisma.gmailSyncRun.findFirst({
+      where: { connection: { userId: session.user.id } },
+      orderBy: { startedAt: "desc" },
+      select: { status: true, source: true, startedAt: true },
+    }),
+    prisma.gmailPushNotification.findFirst({
+      where: { connection: { userId: session.user.id } },
+      orderBy: { receivedAt: "desc" },
+      select: { status: true, receivedAt: true },
+    }),
   ]);
   return (
     <RealWorkspace
@@ -149,6 +161,21 @@ export default async function Page({
       notifications={notifications}
       usage={{ daily: dailyUsage._sum, total: totalUsage._sum }}
       aiConfigured={analysisProviderConfigured()}
+      monitoringActivity={{
+        run: latestSyncRun
+          ? {
+              status: latestSyncRun.status,
+              source: latestSyncRun.source,
+              at: latestSyncRun.startedAt.toISOString(),
+            }
+          : null,
+        push: latestPush
+          ? {
+              status: latestPush.status,
+              at: latestPush.receivedAt.toISOString(),
+            }
+          : null,
+      }}
       notice={(await searchParams).notice}
     />
   );

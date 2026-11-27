@@ -1,6 +1,41 @@
-# MailShield AI — Phase 3
+# MailShield AI — Phase 4
 
-MailShield AI is a university email-security project. Phase 3 adds real, user-initiated analysis for imported Gmail messages and uploaded EML files. It combines versioned deterministic checks with a server-side AI analyst, stores structured reports in PostgreSQL, and includes a separate labeled-dataset evaluation workflow.
+## Phase 4: near-real-time Gmail monitoring
+
+Phase 4 adds an optional Gmail inbox watch through one shared Google Cloud Pub/Sub topic and one authenticated push subscription. A notification starts bounded Gmail history synchronization, the existing analysis pipeline, Gmail warning-label reconciliation, and an in-app report notification for medium/high reports. Delivery and AI analysis may be delayed. **Sync now** remains available even when monitoring is off. The separate fictional `/demo` does not use Gmail.
+
+### Google Cloud and OAuth setup
+
+1. Enable the Gmail API and Pub/Sub API in the OAuth client's project. Declare `gmail.readonly` and `gmail.modify` on the OAuth consent screen. Existing users can keep read-only scanning and reports if they decline the separate **Upgrade Gmail permission** action. `gmail.modify` is required to change labels on individual messages; Google's scope also permits reading, composing, sending, and changing mail. This app only calls read, watch, label creation, and message label modification methods. It never calls send, trash, delete, archive, or spam methods. These Gmail scopes are **restricted** and a public deployment may require OAuth verification and a security assessment for server-side restricted data; use authorized test users for the university demo. [Gmail scope reference](https://developers.google.com/workspace/gmail/api/auth/scopes), [message modify reference](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify).
+2. Create **one** Pub/Sub topic, for example `projects/PROJECT_ID/topics/mailshield-gmail`. Grant `roles/pubsub.publisher` on this topic to `gmail-api-push@system.gserviceaccount.com`. Do not make a topic or subscription per user. [Gmail push guide](https://developers.google.com/workspace/gmail/api/guides/push).
+3. Create a user-managed service account for push identity. Create **one** push subscription on the topic with endpoint `https://YOUR_HOST/api/gmail/pubsub`, authentication enabled with that service account, and audience set to the exact same endpoint URL. The Pub/Sub service agent `service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com` needs `roles/iam.serviceAccountTokenCreator` on the push service account. The administrator configuring the subscription needs permission to act as that account. [Authenticated push setup](https://cloud.google.com/pubsub/docs/authenticate-push-subscriptions).
+4. Set `GMAIL_PUBSUB_TOPIC`, `GMAIL_PUBSUB_SUBSCRIPTION`, `GMAIL_PUBSUB_ENDPOINT`, `GMAIL_PUBSUB_AUDIENCE`, and `GMAIL_PUBSUB_SERVICE_ACCOUNT` in the server environment. The topic and subscription must be fully qualified names. The endpoint and audience must match exactly and use HTTPS. Set a separate random `MONITORING_CRON_SECRET` of at least 32 characters. Never expose these values to the browser or store credentials in PostgreSQL.
+5. Deploy the Next.js Node runtime with a public HTTPS route and a persistent PostgreSQL database; apply the Phase 4 Prisma migration with a **direct** PostgreSQL connection before deployment. Then enable analysis consent and monitoring per mailbox. Enabling calls Gmail `users.watch` with `INBOX` filtering. A successful watch creates a stored expiration and preserves any existing history cursor. Gmail sends an initial notification, which can confirm the delivery path in the settings view. [Watch reference](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users/watch).
+
+The webhook verifies the Google-signed OIDC bearer token, expected audience, issuer, verified service-account email, and subscription name. It validates a bounded Base64URL payload and finds a stored active mailbox by email; a payload cannot nominate a MailShield user. A non-2xx response asks Pub/Sub to retry a genuine processing failure. Notification IDs, unique Gmail message IDs, a mailbox sync lock, and report status transitions make redelivery safe. The private diagnostics endpoint `/api/gmail/diagnostics` shows only the signed-in user's internal run IDs and statuses, without email bodies or tokens.
+
+### Scheduler and recovery
+
+Schedule an authenticated **POST** to `/api/gmail/maintenance` every 15 minutes in the deployment environment, with `Authorization: Bearer MONITORING_CRON_SECRET`. For example, use Google Cloud Scheduler's HTTP target with a secure secret header. The endpoint processes at most 20 mailboxes per invocation, renews watches expiring within 48 hours (at least daily when the scheduler runs), continues bounded history pages, and catches up changes missed by push. `MONITORING_RECOVERY_MINUTES` controls the minimum periodic sync interval, default 15 minutes. Scheduler setup and any provider charges are manual; no paid resources are provisioned by this repository. One request also runs renewal manually during development:
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:MONITORING_CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "$env:APP_URL/api/gmail/maintenance" -Headers $headers
+```
+
+Each history request handles up to 50 new message IDs, stores continuation state, and advances the committed cursor only after those messages are imported. It ignores Gmail label-only changes, which prevents MailShield's own labels from triggering new analysis. If Gmail returns an expired history cursor, a recovery sync checks only the latest **50** inbox messages and establishes a new baseline. It cannot guarantee recovery of older missed mail. Failed operations have bounded retries and backoff; use **Sync now** for manual recovery. The Gmail watch lasts at most seven days, and Google recommends daily renewal. Notifications can be delayed or dropped. [Gmail sync guide](https://developers.google.com/workspace/gmail/api/guides/sync), [push guide](https://developers.google.com/workspace/gmail/api/guides/push).
+
+To test locally, run the app on `127.0.0.1:3000`, expose only `/api/gmail/pubsub` through a trusted HTTPS tunnel, and update the subscription push endpoint, audience, and the matching environment variables to the new HTTPS URL. Restart the app. Use **Renew monitoring** to refresh the watch. Send a harmless subject such as “MailShield demo normal” to the dedicated demo Gmail account; inspect settings and `/api/gmail/diagnostics`. Use an authorized test sender and fictional content for a simulated phishing message. Do not use real malicious links or credentials. There is no unsigned development bypass.
+
+For reports with provisional scores 40–69 or 70–100, MailShield reuses or creates the user labels **MailShield - Medium Risk** and **MailShield - High Risk**, stores their Gmail IDs, and applies only the correct one to the individual message. Low-risk and corrected “Not a threat” messages have no MailShield severity label. Undoing a correction or saving a new analysis reconciles the labels again. Other Gmail labels are untouched. These are MailShield classifications, not native Gmail security warnings. If permission or a label API call fails, website reports remain available and the label status is shown separately.
+
+To completely disable monitoring, choose **Disable automatic monitoring** for each connected mailbox. This calls Gmail `stop` where possible and turns off local processing; **Sync now** still works. For all users, also stop the scheduler, remove the push subscription or topic in Google Cloud, and clear the Phase 4 Pub/Sub environment values. Disconnecting Gmail also stops its watch and revokes its stored token when possible.
+
+Pub/Sub is usage priced. The current [official pricing page](https://cloud.google.com/pubsub/pricing) lists the first **10 GiB of Message Delivery Basic throughput per billing account per calendar month** as free; other throughput, transfer, retention, and scheduler charges may apply. Check the pricing page and billing controls before enabling a demo project.
+
+This phase does not include a Gmail sidebar, Outlook, email alerts, attachment-content malware scanning, quarantine, deletion, or model fine-tuning.
+
+MailShield AI is a university email-security project. Phase 3 added real analysis for imported Gmail messages and uploaded EML files. It combines versioned deterministic checks with a server-side AI analyst, stores structured reports in PostgreSQL, and includes a separate labeled-dataset evaluation workflow.
 
 This phase does **not** claim that a foundation model was trained or fine-tuned. The AI is specialized through a version-controlled security prompt, a small set of reviewed examples, strict structured output, deterministic evidence, and evaluation.
 
@@ -10,7 +45,7 @@ The fictional Phase 1 demo remains at `/demo` and never mixes with private works
 
 - Node.js 20.9 or newer
 - PostgreSQL 15 or newer
-- A Google Cloud OAuth web client for sign-in and optional Gmail read-only access
+- A Google Cloud OAuth web client for sign-in, Gmail read access, and an optional Gmail modify upgrade for labels
 - A DeepSeek or OpenAI API key only if real AI analysis is desired
 
 ```powershell
@@ -35,7 +70,7 @@ Use the second value for `TOKEN_ENCRYPTION_KEY`. Use a separate random value for
 
 1. Enable the Gmail API.
 2. Configure an External OAuth consent screen in Testing for a university demo and add each account under Test users.
-3. Declare `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/gmail.readonly`.
+3. Declare `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, and `https://www.googleapis.com/auth/gmail.modify`. The app requests modify only during the explicit upgrade.
 4. Create a Web application OAuth client.
 5. Add these exact redirect URIs:
 
@@ -44,7 +79,7 @@ Use the second value for `TOKEN_ENCRYPTION_KEY`. Use a separate random value for
    http://127.0.0.1:3000/api/gmail/callback
    ```
 
-Google sign-in establishes the MailShield account. Gmail access is a separate, read-only consent flow. Disconnecting Gmail stops future synchronization; nothing monitors the mailbox while the site is closed.
+Google sign-in establishes the MailShield account. Gmail access is a separate consent flow. Read-only access supports scanning and website reports. A later explicit upgrade requests Gmail modify permission for labels. When monitoring is enabled and the scheduler and Pub/Sub path are configured, work can continue while the site is closed.
 
 ## AI configuration
 
@@ -206,6 +241,6 @@ Automated tests mock or bypass the AI provider and never spend API credits. Live
 
 ## Phase boundaries
 
-Implemented through Phase 3: fictional demo, private accounts, PostgreSQL, manual Gmail read-only sync, EML upload, deterministic checks, consent-gated AI analysis, stored versioned reports, notifications, usage controls, and evaluation.
+Implemented through Phase 4: fictional demo, private accounts, PostgreSQL, manual and monitored Gmail sync, EML upload, deterministic checks, consent-gated AI analysis, stored versioned reports, notifications, Gmail labels, usage controls, and evaluation.
 
-Still planned and deliberately absent: Gmail push monitoring, automatic work while the site is closed, Gmail labels, Gmail extension/sidebar, Outlook integration, Resend alerts, attachment-content malware scanning, and model fine-tuning.
+Deliberately absent: Gmail extension/sidebar, Outlook integration, Resend alerts, attachment-content malware scanning, and model fine-tuning.

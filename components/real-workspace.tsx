@@ -8,6 +8,8 @@ import type {
 import type { Session } from "next-auth";
 import { LogOut } from "lucide-react";
 import { signOut } from "@/auth";
+import { monitoringConfig } from "@/lib/gmail/monitor";
+import { hasModifyScope } from "@/lib/gmail/monitor-core";
 import {
   RealWorkspaceClient,
   type RealNotification,
@@ -30,6 +32,13 @@ type UsageSums = {
 };
 
 const notices: Record<string, string> = {
+  "gmail-upgraded":
+    "Gmail permission upgraded. MailShield can now apply its warning labels after reports are stored.",
+  "monitoring-enabled":
+    "Near-real-time Gmail monitoring enabled. Notifications and analysis may be delayed.",
+  "monitoring-renewed": "Gmail watch renewed.",
+  "monitoring-disabled":
+    "Automatic monitoring disabled. Sync now remains available.",
   "gmail-connected":
     "Gmail connected. No historical email was imported automatically.",
   "gmail-reconnect-required":
@@ -68,8 +77,7 @@ const notices: Record<string, string> = {
   "invalid-eml-file": "The upload was not a valid supported EML message.",
   "eml-too-large": "The EML file exceeds the 5 MB upload limit.",
   "duplicate-eml": "That exact EML file has already been uploaded.",
-  "eml-deleted":
-    "The uploaded email and its dependent reports were deleted.",
+  "eml-deleted": "The uploaded email and its dependent reports were deleted.",
   "report-deleted": "The stored analysis report was deleted.",
   "correction-saved":
     "Marked as not a threat. The original report remains unchanged.",
@@ -114,6 +122,7 @@ export function RealWorkspace({
   notifications,
   usage,
   aiConfigured,
+  monitoringActivity,
   notice,
 }: {
   session: Session;
@@ -125,6 +134,10 @@ export function RealWorkspace({
   notifications: NotificationRow[];
   usage: { daily: UsageSums; total: UsageSums };
   aiConfigured: boolean;
+  monitoringActivity: {
+    run: { status: string; source: string; at: string } | null;
+    push: { status: string; at: string } | null;
+  };
   notice?: string;
 }) {
   const serializedEmails = emails.map((email) => ({
@@ -134,6 +147,7 @@ export function RealWorkspace({
     source: email.source,
     processingStatus: email.processingStatus,
     contentTruncated: email.contentTruncated,
+    gmailLabelStatus: email.gmailLabelStatus,
     receivedAt: email.receivedAt?.toISOString() ?? null,
     attachmentCount: email.attachments.length,
     report: email.reports[0]
@@ -175,6 +189,17 @@ export function RealWorkspace({
               lastSyncAt: connection.lastSyncAt?.toISOString() ?? null,
               lastErrorMessage: connection.lastErrorMessage,
               hasMore,
+              labelPermission: hasModifyScope(connection.grantedScopes),
+              monitoringEnabled: connection.monitoringEnabled,
+              watchExpiresAt: connection.watchExpiresAt?.toISOString() ?? null,
+              watchRenewedAt: connection.watchRenewedAt?.toISOString() ?? null,
+              lastNotificationAt:
+                connection.lastNotificationAt?.toISOString() ?? null,
+              lastAutomaticSyncAt:
+                connection.lastAutomaticSyncAt?.toISOString() ?? null,
+              lastAnalysisAt: connection.lastAnalysisAt?.toISOString() ?? null,
+              lastLabelAt: connection.lastLabelAt?.toISOString() ?? null,
+              monitoringError: connection.monitoringError,
             }
           : null
       }
@@ -198,6 +223,8 @@ export function RealWorkspace({
         },
       }}
       aiConfigured={aiConfigured}
+      monitoringActivity={monitoringActivity}
+      pubsubConfigured={monitoringConfig().configured}
       notice={noticeText(notice)}
       signOutControl={
         <form

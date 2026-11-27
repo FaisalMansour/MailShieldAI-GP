@@ -6,6 +6,7 @@ import { assertOwner } from "../authorization";
 import { gmailFor } from "./client";
 import { parseGmailMessage } from "./parser";
 import { uniqueMessageIds } from "./sync-core";
+import { addedMessageIds } from "./monitor-core";
 export { cursorAfterPage, uniqueMessageIds } from "./sync-core";
 
 const RETENTION_DAYS = 30;
@@ -88,10 +89,15 @@ async function locked<T>(
     where: {
       id: connection.id,
       userId,
-      syncInProgress: false,
+      OR: [{ syncInProgress: false }, { syncLockUntil: { lt: new Date() } }],
       status: "CONNECTED",
     },
-    data: { syncInProgress: true, lastErrorCode: null, lastErrorMessage: null },
+    data: {
+      syncInProgress: true,
+      syncLockUntil: new Date(Date.now() + 5 * 60_000),
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    },
   });
   if (!acquired.count) throw new Error("SYNC_ALREADY_RUNNING");
   try {
@@ -102,7 +108,7 @@ async function locked<T>(
   } finally {
     await prisma.gmailConnection.updateMany({
       where: { id: connection.id, userId },
-      data: { syncInProgress: false },
+      data: { syncInProgress: false, syncLockUntil: null },
     });
   }
 }
@@ -276,11 +282,7 @@ export async function syncNewMail(userId: string): Promise<SyncResult> {
         if (errorStatus(error) === 404) return recoverySync(userId, connection);
         throw error;
       }
-      ids = uniqueMessageIds(
-        (response.data.history || []).flatMap((entry) =>
-          (entry.messagesAdded || []).map((item) => item.message?.id || ""),
-        ),
-      );
+      ids = addedMessageIds(response.data.history || []);
       pageToken = response.data.nextPageToken || null;
       pendingHistoryId = response.data.historyId || pendingHistoryId;
     }

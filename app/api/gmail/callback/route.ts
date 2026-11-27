@@ -4,7 +4,13 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { assertMailboxMatches, assertOwner } from "@/lib/authorization";
 import { encryptSecret } from "@/lib/token-crypto";
-import { oauthClient, OAUTH_COOKIE, readOAuthCookie } from "@/lib/gmail/oauth";
+import {
+  GMAIL_MODIFY_SCOPE,
+  GMAIL_SCOPE,
+  oauthClient,
+  OAUTH_COOKIE,
+  readOAuthCookie,
+} from "@/lib/gmail/oauth";
 import { appOrigin } from "@/lib/server-env";
 
 function done(notice: string) {
@@ -33,6 +39,9 @@ export async function GET(request: Request) {
       code,
       codeVerifier: pending.verifier,
     });
+    const granted = new Set((tokens.scope || "").split(/\s+/).filter(Boolean));
+    if (!granted.has(pending.upgrade ? GMAIL_MODIFY_SCOPE : GMAIL_SCOPE))
+      throw new Error("GMAIL_SCOPE_NOT_GRANTED");
     client.setCredentials(tokens);
     const { google } = await import("googleapis");
     const gmail = google.gmail({ version: "v1", auth: client });
@@ -43,6 +52,8 @@ export async function GET(request: Request) {
     const existing = await prisma.gmailConnection.findUnique({
       where: { userId: session.user.id },
     });
+    if (pending.upgrade && (!existing || existing.status !== "CONNECTED"))
+      throw new Error("GMAIL_NOT_CONNECTED");
     const refresh = tokens.refresh_token
       ? encryptSecret(tokens.refresh_token)
       : existing?.refreshTokenEncrypted || null;
@@ -59,7 +70,13 @@ export async function GET(request: Request) {
           ? new Date(tokens.expiry_date)
           : null,
         status,
-        historyId: profile.data.historyId || existing?.historyId,
+        grantedScopes: [
+          ...new Set([
+            ...(existing?.grantedScopes || "").split(/\s+/).filter(Boolean),
+            ...granted,
+          ]),
+        ].join(" "),
+        historyId: existing?.historyId || profile.data.historyId,
         continuationPageToken: null,
         pendingHistoryId: null,
         pendingMessageIds: [],
@@ -79,6 +96,7 @@ export async function GET(request: Request) {
           ? new Date(tokens.expiry_date)
           : null,
         status,
+        grantedScopes: [...granted].join(" "),
         historyId: profile.data.historyId || null,
         lastErrorCode: refresh ? null : "REFRESH_TOKEN_MISSING",
         lastErrorMessage: refresh
@@ -86,7 +104,13 @@ export async function GET(request: Request) {
           : "Google did not return offline access. Reconnect Gmail and approve access again.",
       },
     });
-    return done(refresh ? "gmail-connected" : "gmail-reconnect-required");
+    return done(
+      refresh
+        ? pending.upgrade
+          ? "gmail-upgraded"
+          : "gmail-connected"
+        : "gmail-reconnect-required",
+    );
   } catch (error) {
     return done(
       error instanceof Error && error.message === "MAILBOX_MISMATCH"

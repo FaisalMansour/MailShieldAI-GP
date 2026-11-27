@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { validDeletionConfirmation } from "@/lib/data-controls";
 import { revokeConnectionToken } from "@/lib/gmail/client";
+import { disableMonitoring } from "@/lib/gmail/monitor";
 import {
   home,
   operationError,
@@ -15,7 +16,10 @@ export async function POST(request: Request) {
     const connection = await prisma.gmailConnection.findUnique({
       where: { userId: user.id },
     });
-    if (connection) await revokeConnectionToken(connection);
+    if (connection) {
+      if (connection.monitoringEnabled) await disableMonitoring(user.id);
+      await revokeConnectionToken(connection);
+    }
     await prisma.user.delete({ where: { id: user.id } });
     return home(request, "account-deleted");
   } catch (error) {

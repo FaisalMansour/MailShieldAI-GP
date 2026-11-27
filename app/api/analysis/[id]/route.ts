@@ -1,4 +1,5 @@
 import { analyzeStoredEmail } from "@/lib/analysis/analyze";
+import { syncEmailLabel } from "@/lib/gmail/labels";
 import { operationError, requireUserForMutation } from "@/lib/route-helpers";
 import { appOrigin } from "@/lib/server-env";
 import { NextResponse } from "next/server";
@@ -14,6 +15,7 @@ export async function POST(
     await analyzeStoredEmail(user.id, id, {
       reanalyze: form.get("mode") === "reanalyze",
     });
+    await syncEmailLabel(user.id, id);
     return NextResponse.redirect(
       new URL(`/emails/${id}?notice=analysis-complete`, appOrigin()),
       303,

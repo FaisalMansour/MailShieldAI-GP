@@ -13,3 +13,8 @@ playwright-report/
 lib/generated/
 .neon
 .vercel
+
+# Local build artifacts and scratch files
+.presentation-build/
+output/
+tmp/

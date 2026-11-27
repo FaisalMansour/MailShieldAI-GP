@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { operationError, requireUserForMutation } from "@/lib/route-helpers";
 import { appOrigin } from "@/lib/server-env";
 import { NextResponse } from "next/server";
+import { syncEmailLabel } from "@/lib/gmail/labels";
 
 export async function POST(
   request: Request,
@@ -24,6 +25,7 @@ export async function POST(
         where: { id: active.id },
         data: { revertedAt: new Date() },
       });
+      await syncEmailLabel(user.id, report.storedEmailId);
       return NextResponse.redirect(
         new URL(
           `/emails/${report.storedEmailId}?notice=correction-undone`,
@@ -40,6 +42,7 @@ export async function POST(
         note: "User marked this report as not a threat. The original analysis remains unchanged.",
       },
     });
+    await syncEmailLabel(user.id, report.storedEmailId);
     return NextResponse.redirect(
       new URL(
         `/emails/${report.storedEmailId}?notice=correction-saved`,

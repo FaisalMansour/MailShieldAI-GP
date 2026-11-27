@@ -6,6 +6,7 @@ import {
   requireUserForMutation,
 } from "@/lib/route-helpers";
 import { disconnectedCredentialState } from "@/lib/data-controls";
+import { disableMonitoring } from "@/lib/gmail/monitor";
 export async function POST(request: Request) {
   try {
     const user = await requireUserForMutation(request);
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
       where: { userId: user.id },
     });
     if (connection) {
+      if (connection.monitoringEnabled) await disableMonitoring(user.id);
       await revokeConnectionToken(connection);
       await prisma.gmailConnection.update({
         where: { id: connection.id },

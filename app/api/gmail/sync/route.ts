@@ -1,5 +1,4 @@
-import { syncNewMail } from "@/lib/gmail/sync";
-import { scheduleAutomaticAnalysis } from "@/lib/analysis/automatic";
+import { processMailbox } from "@/lib/gmail/monitor";
 import {
   home,
   operationError,
@@ -11,8 +10,7 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
     const user = await requireUserForMutation(request);
-    const result = await syncNewMail(user.id);
-    if (result.imported) scheduleAutomaticAnalysis(user.id);
+    const result = await processMailbox(user.id, "MANUAL");
     return home(
       request,
       `${result.hasMore ? "sync-partial" : "sync-complete"}-${result.imported}-${result.duplicate}${result.recovered ? "-recovered" : ""}`,

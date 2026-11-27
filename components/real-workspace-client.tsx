@@ -36,6 +36,7 @@ export type RealEmail = {
   contentTruncated: boolean;
   receivedAt: string | null;
   attachmentCount: number;
+  gmailLabelStatus: string;
   report: {
     finalScore: number;
     severity: Severity;
@@ -60,6 +61,15 @@ type Connection = {
   lastSyncAt: string | null;
   lastErrorMessage: string | null;
   hasMore: boolean;
+  labelPermission: boolean;
+  monitoringEnabled: boolean;
+  watchExpiresAt: string | null;
+  watchRenewedAt: string | null;
+  lastNotificationAt: string | null;
+  lastAutomaticSyncAt: string | null;
+  lastAnalysisAt: string | null;
+  lastLabelAt: string | null;
+  monitoringError: string | null;
 } | null;
 
 type Usage = {
@@ -79,6 +89,11 @@ type Props = {
   notifications: RealNotification[];
   usage: { daily: Usage; total: Usage };
   aiConfigured: boolean;
+  monitoringActivity: {
+    run: { status: string; source: string; at: string } | null;
+    push: { status: string; at: string } | null;
+  };
+  pubsubConfigured: boolean;
   notice: string | null;
   signOutControl: ReactNode;
 };
@@ -98,7 +113,7 @@ function displayStatus(email: RealEmail) {
     };
   const labels: Record<string, string> = {
     NOT_ANALYZED: "Not analyzed",
-    QUEUED: "Queued",
+    QUEUED: "Queued for analysis",
     ANALYZING: "Analyzing",
     FAILED: "Analysis failed",
     NEEDS_REVIEW: "Needs review",
@@ -159,6 +174,14 @@ function RealEmailTable({ emails }: { emails: RealEmail[] }) {
                   {email.contentTruncated && (
                     <span className="score-mini">Partial content</span>
                   )}
+                  {email.source === "GMAIL" && email.report && (
+                    <span className="score-mini">
+                      Report ready · Gmail label:{" "}
+                      {email.gmailLabelStatus
+                        .toLowerCase()
+                        .replaceAll("_", " ")}
+                    </span>
+                  )}
                 </td>
                 <td data-label="Source">
                   {email.source === "GMAIL" ? "Gmail" : "EML upload"}
@@ -204,16 +227,21 @@ function Overview({
   stats,
 }: Pick<Props, "emails" | "total" | "stats">) {
   const analyzed = emails.filter((email) => email.report);
-  const high = analyzed.filter((email) => email.report?.severity === "HIGH").length;
+  const high = analyzed.filter(
+    (email) => email.report?.severity === "HIGH",
+  ).length;
   const medium = analyzed.filter(
     (email) => email.report?.severity === "MEDIUM",
   ).length;
-  const low = analyzed.filter((email) => email.report?.severity === "LOW").length;
+  const low = analyzed.filter(
+    (email) => email.report?.severity === "LOW",
+  ).length;
   const unassessed = Math.max(0, emails.length - analyzed.length);
   const flagged = emails
     .filter(
       (email) =>
-        email.report?.severity === "HIGH" || email.report?.severity === "MEDIUM",
+        email.report?.severity === "HIGH" ||
+        email.report?.severity === "MEDIUM",
     )
     .slice(0, 5);
   const days = Array.from({ length: 5 }, (_, index) => {
@@ -252,8 +280,18 @@ function Overview({
       <section className="metrics" aria-label="Workspace metrics">
         {[
           ["Stored emails", total, "Gmail and EML uploads", Mail],
-          ["Analyzed", stats.analyzed, `${stats.pending} pending · ${stats.failed} failed`, BrainCircuit],
-          ["Flagged emails", stats.flagged, "Medium or high findings", ShieldAlert],
+          [
+            "Analyzed",
+            stats.analyzed,
+            `${stats.pending} pending · ${stats.failed} failed`,
+            BrainCircuit,
+          ],
+          [
+            "Flagged emails",
+            stats.flagged,
+            "Medium or high findings",
+            ShieldAlert,
+          ],
           ["Retention", "30d", "Automatic storage window", Clock3],
         ].map(([title, value, detail, Icon], index) => {
           const MetricIcon = Icon as typeof Mail;
@@ -280,7 +318,11 @@ function Overview({
               <i /> Received <i className="flagged-dot" /> Flagged
             </span>
           </div>
-          <div className="bar-chart" role="img" aria-label="Five-day email activity">
+          <div
+            className="bar-chart"
+            role="img"
+            aria-label="Five-day email activity"
+          >
             {counts.map((item, index) => (
               <div className="bar-group" key={days[index].toISOString()}>
                 <div className="bar-space">
@@ -348,7 +390,8 @@ function Overview({
         <div className="panel-head">
           <div>
             <h2>
-              Needs your attention <span className="count">{stats.flagged}</span>
+              Needs your attention{" "}
+              <span className="count">{stats.flagged}</span>
             </h2>
             <p>Recent medium- and high-risk reports.</p>
           </div>
@@ -380,7 +423,8 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
     const query = search.trim().toLowerCase();
     return emails
       .filter((email) => {
-        const searchable = `${email.subject || ""} ${email.sender || ""}`.toLowerCase();
+        const searchable =
+          `${email.subject || ""} ${email.sender || ""}`.toLowerCase();
         const emailStatus = email.report
           ? "Analyzed"
           : ["QUEUED", "ANALYZING"].includes(email.processingStatus)
@@ -417,7 +461,9 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
         eyebrow="REAL INBOX"
         title="All emails"
         description="Search imported messages and review the evidence one message at a time."
-        action={<span className="date-range">{emails.length} stored messages</span>}
+        action={
+          <span className="date-range">{emails.length} stored messages</span>
+        }
       />
       <section className="panel">
         <div className="filter-bar">
@@ -435,7 +481,10 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
             <SlidersHorizontal size={17} />
             <label>
               Severity
-              <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+              <select
+                value={severity}
+                onChange={(event) => setSeverity(event.target.value)}
+              >
                 <option>All</option>
                 <option value="HIGH">High</option>
                 <option value="MEDIUM">Medium</option>
@@ -444,7 +493,10 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
             </label>
             <label>
               Source
-              <select value={source} onChange={(event) => setSource(event.target.value)}>
+              <select
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+              >
                 <option>All</option>
                 <option value="GMAIL">Gmail</option>
                 <option value="EML_UPLOAD">EML upload</option>
@@ -452,7 +504,10 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
             </label>
             <label>
               Analysis status
-              <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+              >
                 <option>All</option>
                 <option>Analyzed</option>
                 <option>Processing</option>
@@ -462,7 +517,10 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
             </label>
             <label>
               Sort by
-              <select value={sort} onChange={(event) => setSort(event.target.value)}>
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value)}
+              >
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
                 <option value="risk">Highest risk first</option>
@@ -470,7 +528,9 @@ function EmailBrowser({ emails }: { emails: RealEmail[] }) {
             </label>
           </div>
           <div className="results-line">
-            <span role="status">Showing {shown.length} of {emails.length} emails</span>
+            <span role="status">
+              Showing {shown.length} of {emails.length} emails
+            </span>
             <button className="text-link" type="button" onClick={clear}>
               Clear filters
             </button>
@@ -512,7 +572,12 @@ function NotificationsView({
         title="Notifications"
         description={`${unread} unread · Medium- and high-risk findings from real stored reports.`}
         action={
-          <button className="button" type="button" onClick={onReadAll} disabled={!unread || busy}>
+          <button
+            className="button"
+            type="button"
+            onClick={onReadAll}
+            disabled={!unread || busy}
+          >
             <CheckCheck size={17} /> Mark all as read
           </button>
         }
@@ -520,21 +585,36 @@ function NotificationsView({
       <section className="panel notification-list">
         {notifications.length ? (
           notifications.map((item) => (
-            <article className={`notification ${item.readAt ? "read" : "unread"}`} key={item.id}>
-              <span className="notification-icon"><Bell size={19} /></span>
+            <article
+              className={`notification ${item.readAt ? "read" : "unread"}`}
+              key={item.id}
+            >
+              <span className="notification-icon">
+                <Bell size={19} />
+              </span>
               <div className="notification-content">
                 <div className="notification-title">
                   <h2>{item.title}</h2>
                   {!item.readAt && <span className="unread-label">Unread</span>}
                 </div>
                 <p>{item.subject || item.message}</p>
-                <span className="notification-date">{dateLabel(item.createdAt, true)} UTC</span>
+                <span className="notification-date">
+                  {dateLabel(item.createdAt, true)} UTC
+                </span>
                 <div className="notification-actions">
-                  <Link className="text-link" href={`/emails/${item.storedEmailId}`}>
+                  <Link
+                    className="text-link"
+                    href={`/emails/${item.storedEmailId}`}
+                  >
                     View report <ArrowUpRight size={15} />
                   </Link>
                   {!item.readAt ? (
-                    <button className="text-link" type="button" disabled={busy} onClick={() => onRead(item.id)}>
+                    <button
+                      className="text-link"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onRead(item.id)}
+                    >
                       Mark as read
                     </button>
                   ) : (
@@ -542,7 +622,9 @@ function NotificationsView({
                   )}
                 </div>
               </div>
-              <span className={`badge ${item.severity.toLowerCase()}`}>{item.severity}</span>
+              <span className={`badge ${item.severity.toLowerCase()}`}>
+                {item.severity}
+              </span>
             </article>
           ))
         ) : (
@@ -562,7 +644,17 @@ function SettingsView({
   userSettings,
   aiConfigured,
   usage,
-}: Pick<Props, "connection" | "userSettings" | "aiConfigured" | "usage">) {
+  pubsubConfigured,
+  monitoringActivity,
+}: Pick<
+  Props,
+  | "connection"
+  | "userSettings"
+  | "aiConfigured"
+  | "usage"
+  | "pubsubConfigured"
+  | "monitoringActivity"
+>) {
   const connected = connection?.status === "CONNECTED";
   const reconnect = connection?.status === "RECONNECT_REQUIRED";
   return (
@@ -576,59 +668,269 @@ function SettingsView({
         <div>
           <section className="panel report-section">
             <div className="connection-header">
-              <span className="provider-icon"><Mail size={28} /></span>
+              <span className="provider-icon">
+                <Mail size={28} />
+              </span>
               <div>
                 <h2>Gmail connection</h2>
                 <p>{connection?.mailboxEmail || "No mailbox connected"}</p>
               </div>
               <span className={`badge ${connected ? "low" : "unknown"}`}>
-                {connected ? "Read-only connected" : reconnect ? "Reconnect required" : "Disconnected"}
+                {connected
+                  ? "Connected"
+                  : reconnect
+                    ? "Reconnect required"
+                    : "Disconnected"}
               </span>
             </div>
             <dl className="settings-meta">
-              <dt>Connection</dt><dd>{connected ? "Google Gmail · read-only" : "Not active"}</dd>
-              <dt>Last successful sync</dt><dd>{connection?.lastSyncAt ? `${dateLabel(connection.lastSyncAt, true)} UTC` : "Never synced"}</dd>
-              <dt>Import model</dt><dd>Manual, bounded, and deduplicated</dd>
-              <dt>Background monitoring</dt><dd>Disabled</dd>
+              <dt>Connection</dt>
+              <dd>{connected ? "Google Gmail" : "Not active"}</dd>
+              <dt>Last successful sync</dt>
+              <dd>
+                {connection?.lastSyncAt
+                  ? `${dateLabel(connection.lastSyncAt, true)} UTC`
+                  : "Never synced"}
+              </dd>
+              <dt>Import model</dt>
+              <dd>Bounded and deduplicated</dd>
+              <dt>Label permission</dt>
+              <dd>
+                {connection?.labelPermission
+                  ? "Granted (Gmail modify)"
+                  : "Upgrade required; website reports still work"}
+              </dd>
+              <dt>Near-real-time monitoring</dt>
+              <dd>{connection?.monitoringEnabled ? "Enabled" : "Disabled"}</dd>
+              <dt>Watch</dt>
+              <dd>
+                {!pubsubConfigured
+                  ? "Pub/Sub setup required"
+                  : connection?.watchExpiresAt
+                    ? new Date(connection.watchExpiresAt) > new Date()
+                      ? connection.lastNotificationAt &&
+                        connection.watchRenewedAt &&
+                        new Date(connection.lastNotificationAt) >=
+                          new Date(connection.watchRenewedAt)
+                        ? "Active; push received"
+                        : "Watch created; awaiting push delivery"
+                      : "Expired"
+                    : "Not active"}
+              </dd>
+              <dt>Watch expires</dt>
+              <dd>
+                {connection?.watchExpiresAt
+                  ? `${dateLabel(connection.watchExpiresAt, true)} UTC`
+                  : "—"}
+              </dd>
+              <dt>Last notification</dt>
+              <dd>
+                {connection?.lastNotificationAt
+                  ? `${dateLabel(connection.lastNotificationAt, true)} UTC`
+                  : "None"}
+              </dd>
+              <dt>Last automatic sync</dt>
+              <dd>
+                {connection?.lastAutomaticSyncAt
+                  ? `${dateLabel(connection.lastAutomaticSyncAt, true)} UTC`
+                  : "None"}
+              </dd>
+              <dt>Last analysis</dt>
+              <dd>
+                {connection?.lastAnalysisAt
+                  ? `${dateLabel(connection.lastAnalysisAt, true)} UTC`
+                  : "None"}
+              </dd>
+              <dt>Last Gmail label update</dt>
+              <dd>
+                {connection?.lastLabelAt
+                  ? `${dateLabel(connection.lastLabelAt, true)} UTC`
+                  : "None"}
+              </dd>
+              <dt>Monitoring error</dt>
+              <dd>{connection?.monitoringError || "None"}</dd>
+              <dt>Latest notification</dt>
+              <dd>
+                {monitoringActivity.push
+                  ? `${monitoringActivity.push.status === "RECEIVED" ? "Received" : monitoringActivity.push.status.toLowerCase().replaceAll("_", " ")} · ${dateLabel(monitoringActivity.push.at, true)} UTC`
+                  : "None"}
+              </dd>
+              <dt>Latest sync run</dt>
+              <dd>
+                {monitoringActivity.run
+                  ? `${monitoringActivity.run.status === "STARTED" ? "Importing" : monitoringActivity.run.status.toLowerCase().replaceAll("_", " ")} (${monitoringActivity.run.source.toLowerCase()}) · ${dateLabel(monitoringActivity.run.at, true)} UTC`
+                  : "None"}
+              </dd>
             </dl>
             <div className="action-row">
               {!connected ? (
-                <a className="button primary" href="/api/gmail/connect"><PlugZap size={16} />{reconnect ? "Reconnect Gmail" : "Connect Gmail"}</a>
+                <a className="button primary" href="/api/gmail/connect">
+                  <PlugZap size={16} />
+                  {reconnect ? "Reconnect Gmail" : "Connect Gmail"}
+                </a>
               ) : (
                 <>
-                  <form action="/api/gmail/import" method="post"><button className="button" type="submit">Import latest 20</button></form>
-                  <form action="/api/gmail/sync" method="post"><button className="button primary" type="submit"><RefreshCw size={15} />{connection.hasMore ? "Continue sync" : "Sync now"}</button></form>
-                  <form action="/api/gmail/disconnect" method="post"><button className="button" type="submit">Disconnect Gmail</button></form>
+                  <form action="/api/gmail/import" method="post">
+                    <button className="button" type="submit">
+                      Import latest 20
+                    </button>
+                  </form>
+                  <form action="/api/gmail/sync" method="post">
+                    <button className="button primary" type="submit">
+                      <RefreshCw size={15} />
+                      {connection.hasMore ? "Continue sync" : "Sync now"}
+                    </button>
+                  </form>
+                  {!connection.labelPermission && (
+                    <a className="button" href="/api/gmail/upgrade">
+                      Upgrade Gmail permission
+                    </a>
+                  )}
+                  <form action="/api/gmail/monitor" method="post">
+                    <input
+                      type="hidden"
+                      name="action"
+                      value={connection.monitoringEnabled ? "renew" : "enable"}
+                    />
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={
+                        !pubsubConfigured ||
+                        !userSettings.analysisEnabled ||
+                        !aiConfigured
+                      }
+                    >
+                      {connection.monitoringEnabled
+                        ? "Renew monitoring"
+                        : "Enable monitoring"}
+                    </button>
+                  </form>
+                  {connection.monitoringEnabled && (
+                    <form action="/api/gmail/monitor" method="post">
+                      <input type="hidden" name="action" value="disable" />
+                      <button className="button" type="submit">
+                        Disable automatic monitoring
+                      </button>
+                    </form>
+                  )}
+                  <form action="/api/gmail/disconnect" method="post">
+                    <button className="button" type="submit">
+                      Disconnect Gmail
+                    </button>
+                  </form>
                 </>
               )}
             </div>
+            <p className="section-caption">
+              Gmail modify permission also allows reading, composing, sending,
+              and changing mailbox labels. MailShield uses it only for its
+              warning labels. Provisional risk thresholds are 40–69 for medium
+              and 70–100 for high. Push delivery and AI analysis can be delayed.
+              If Gmail history expires, recovery checks only the latest 50 inbox
+              messages and may miss older mail.
+            </p>
+            {connected && (
+              <p className="section-caption">
+                <a href="/api/gmail/diagnostics">
+                  View private monitoring diagnostics
+                </a>
+              </p>
+            )}
           </section>
           <section className="panel report-section" id="upload">
             <div className="connection-header">
-              <span className="provider-icon"><FileUp size={28} /></span>
-              <div><h2>Upload an EML message</h2><p>Safe parsing without executing remote content.</p></div>
+              <span className="provider-icon">
+                <FileUp size={28} />
+              </span>
+              <div>
+                <h2>Upload an EML message</h2>
+                <p>Safe parsing without executing remote content.</p>
+              </div>
             </div>
-            <form className="upload-form" action="/api/eml/upload" method="post" encType="multipart/form-data">
-              <input type="file" name="eml" accept=".eml,message/rfc822" required />
-              <button className="button primary" type="submit"><Upload size={16} />Parse and store EML</button>
+            <form
+              className="upload-form"
+              action="/api/eml/upload"
+              method="post"
+              encType="multipart/form-data"
+            >
+              <input
+                type="file"
+                name="eml"
+                accept=".eml,message/rfc822"
+                required
+              />
+              <button className="button primary" type="submit">
+                <Upload size={16} />
+                Parse and store EML
+              </button>
             </form>
-            <p className="section-caption">EML only, maximum 5 MB. The original upload is discarded after safe text and metadata extraction.</p>
+            <p className="section-caption">
+              EML only, maximum 5 MB. The original upload is discarded after
+              safe text and metadata extraction.
+            </p>
           </section>
           <section className="panel report-section">
             <div className="connection-header">
-              <span className="provider-icon"><BrainCircuit size={28} /></span>
-              <div><h2>Automatic AI analysis</h2><p>Explicit, reversible, and applied automatically to newly stored messages.</p></div>
-              <span className={`badge ${aiConfigured && userSettings.analysisEnabled ? "low" : "unknown"}`}>
-                {!aiConfigured ? "AI not configured" : userSettings.analysisEnabled ? "Enabled" : "Consent required"}
+              <span className="provider-icon">
+                <BrainCircuit size={28} />
+              </span>
+              <div>
+                <h2>Automatic AI analysis</h2>
+                <p>
+                  Explicit, reversible, and applied automatically to newly
+                  stored messages.
+                </p>
+              </div>
+              <span
+                className={`badge ${aiConfigured && userSettings.analysisEnabled ? "low" : "unknown"}`}
+              >
+                {!aiConfigured
+                  ? "AI not configured"
+                  : userSettings.analysisEnabled
+                    ? "Enabled"
+                    : "Consent required"}
               </span>
             </div>
-            <p>When enabled, every newly imported or uploaded message is queued automatically. Analysis sends that message&apos;s safe text, relevant headers, URL metadata, attachment metadata, and deterministic findings. Tokens, session data, unrelated messages, raw HTML, and attachment bodies are excluded.</p>
-            <form className="settings-form" action="/api/analysis/consent" method="post">
-              <label className="toggle-row"><input type="checkbox" name="analysisEnabled" defaultChecked={userSettings.analysisEnabled} /> Enable real AI analysis</label>
-              <label>Daily message limit <input type="number" name="dailyAnalysisLimit" min="1" max="50" defaultValue={userSettings.dailyAnalysisLimit} /></label>
-              <button className="button primary" type="submit">Save analysis settings</button>
+            <p>
+              When enabled, every newly imported or uploaded message is queued
+              automatically. Analysis sends that message&apos;s safe text,
+              relevant headers, URL metadata, attachment metadata, and
+              deterministic findings. Tokens, session data, unrelated messages,
+              raw HTML, and attachment bodies are excluded.
+            </p>
+            <form
+              className="settings-form"
+              action="/api/analysis/consent"
+              method="post"
+            >
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  name="analysisEnabled"
+                  defaultChecked={userSettings.analysisEnabled}
+                />{" "}
+                Enable real AI analysis
+              </label>
+              <label>
+                Daily message limit{" "}
+                <input
+                  type="number"
+                  name="dailyAnalysisLimit"
+                  min="1"
+                  max="50"
+                  defaultValue={userSettings.dailyAnalysisLimit}
+                />
+              </label>
+              <button className="button primary" type="submit">
+                Save analysis settings
+              </button>
             </form>
-            <p className="section-caption">Pending and failed messages are retried automatically when you open the workspace. You can still retry an individual failed report from its email page.</p>
+            <p className="section-caption">
+              Pending and failed messages are retried automatically when you
+              open the workspace. You can still retry an individual failed
+              report from its email page.
+            </p>
           </section>
         </div>
         <aside>
@@ -636,29 +938,85 @@ function SettingsView({
             <BarChart3 size={28} />
             <h2>Analysis usage</h2>
             <dl className="settings-meta usage-list">
-              <dt>Today</dt><dd>{usage.daily.analyzedMessages} / {userSettings.dailyAnalysisLimit} messages</dd>
-              <dt>All time</dt><dd>{usage.total.analyzedMessages} model calls</dd>
-              <dt>Tokens</dt><dd>{(usage.total.inputTokens + usage.total.outputTokens).toLocaleString()}</dd>
-              <dt>Estimated cost</dt><dd>${(usage.total.estimatedCostMicros / 1_000_000).toFixed(4)}</dd>
+              <dt>Today</dt>
+              <dd>
+                {usage.daily.analyzedMessages} /{" "}
+                {userSettings.dailyAnalysisLimit} messages
+              </dd>
+              <dt>All time</dt>
+              <dd>{usage.total.analyzedMessages} model calls</dd>
+              <dt>Tokens</dt>
+              <dd>
+                {(
+                  usage.total.inputTokens + usage.total.outputTokens
+                ).toLocaleString()}
+              </dd>
+              <dt>Estimated cost</dt>
+              <dd>
+                ${(usage.total.estimatedCostMicros / 1_000_000).toFixed(4)}
+              </dd>
             </dl>
-            <p className="section-caption">Cost is an estimate, not a billing record.</p>
+            <p className="section-caption">
+              Cost is an estimate, not a billing record.
+            </p>
           </section>
           <section className="panel report-section roadmap">
             <ShieldCheck size={28} />
             <h2>Privacy by design</h2>
             <ul>
               <li>One Gmail connection per signed-in user</li>
-              <li>Read-only Gmail access and manual sync</li>
+              <li>Manual sync remains available when monitoring is disabled</li>
               <li>30-day email and report retention</li>
-              <li>No background mailbox monitoring</li>
+              <li>Automatic monitoring requires consent and Pub/Sub setup</li>
             </ul>
           </section>
         </aside>
       </div>
       <section className="data-controls real-data-controls">
-        <article className="panel report-section"><Clock3 /><h2>Retention and cleanup</h2><p>Emails and dependent reports expire after 30 days. Physical cleanup remains an explicit protected operation.</p></article>
-        <article className="panel report-section danger-zone"><Trash2 /><h2>Delete stored emails</h2><p>Removes imported messages and dependent reports, findings, corrections, notifications, and usage records.</p><form action="/api/data/emails" method="post"><input name="confirmation" aria-label="Type DELETE to confirm" placeholder="Type DELETE" /><button className="button danger" type="submit">Delete stored emails</button></form></article>
-        <article className="panel report-section danger-zone"><Trash2 /><h2>Delete account</h2><p>Revokes Gmail access when possible and removes your account and all stored data.</p><form action="/api/account/delete" method="post"><input name="confirmation" aria-label="Type DELETE MY ACCOUNT to confirm" placeholder="Type DELETE MY ACCOUNT" /><button className="button danger" type="submit">Delete account</button></form></article>
+        <article className="panel report-section">
+          <Clock3 />
+          <h2>Retention and cleanup</h2>
+          <p>
+            Emails and dependent reports expire after 30 days. Physical cleanup
+            remains an explicit protected operation.
+          </p>
+        </article>
+        <article className="panel report-section danger-zone">
+          <Trash2 />
+          <h2>Delete stored emails</h2>
+          <p>
+            Removes imported messages and dependent reports, findings,
+            corrections, notifications, and usage records.
+          </p>
+          <form action="/api/data/emails" method="post">
+            <input
+              name="confirmation"
+              aria-label="Type DELETE to confirm"
+              placeholder="Type DELETE"
+            />
+            <button className="button danger" type="submit">
+              Delete stored emails
+            </button>
+          </form>
+        </article>
+        <article className="panel report-section danger-zone">
+          <Trash2 />
+          <h2>Delete account</h2>
+          <p>
+            Revokes Gmail access when possible and removes your account and all
+            stored data.
+          </p>
+          <form action="/api/account/delete" method="post">
+            <input
+              name="confirmation"
+              aria-label="Type DELETE MY ACCOUNT to confirm"
+              placeholder="Type DELETE MY ACCOUNT"
+            />
+            <button className="button danger" type="submit">
+              Delete account
+            </button>
+          </form>
+        </article>
       </section>
     </>
   );
@@ -682,7 +1040,9 @@ export function RealWorkspaceClient(props: Props) {
     const update = () => {
       const hash = window.location.hash.slice(1) as WorkspaceRoute;
       setRoute(routeLabels[hash] ? hash : "overview");
-      document.getElementById("real-main-content")?.focus({ preventScroll: true });
+      document
+        .getElementById("real-main-content")
+        ?.focus({ preventScroll: true });
       window.scrollTo(0, 0);
     };
     update();
@@ -703,11 +1063,15 @@ export function RealWorkspaceClient(props: Props) {
       const now = new Date().toISOString();
       setNotifications((items) =>
         items.map((item) =>
-          !id || item.id === id ? { ...item, readAt: item.readAt || now } : item,
+          !id || item.id === id
+            ? { ...item, readAt: item.readAt || now }
+            : item,
         ),
       );
     } catch {
-      setNotificationError("Notification status could not be saved. Please retry.");
+      setNotificationError(
+        "Notification status could not be saved. Please retry.",
+      );
     } finally {
       setNotificationBusy(false);
     }
@@ -715,11 +1079,18 @@ export function RealWorkspaceClient(props: Props) {
 
   return (
     <div className="real-app real-workspace-shell">
-      <a className="skip-link" href="#real-main-content">Skip to content</a>
+      <a className="skip-link" href="#real-main-content">
+        Skip to content
+      </a>
       <aside className="real-sidebar">
         <a className="brand" href="#overview">
-          <span className="brand-icon"><ShieldCheck /></span>
-          <span>MailShield<span className="brand-ai"> AI</span><small>PRIVATE SECURITY WORKSPACE</small></span>
+          <span className="brand-icon">
+            <ShieldCheck />
+          </span>
+          <span>
+            MailShield<span className="brand-ai"> AI</span>
+            <small>PRIVATE SECURITY WORKSPACE</small>
+          </span>
         </a>
         <div className="workspace-label">WORKSPACE</div>
         <nav aria-label="Workspace navigation">
@@ -731,44 +1102,105 @@ export function RealWorkspaceClient(props: Props) {
           ].map(([id, label, Icon]) => {
             const NavIcon = Icon as typeof Mail;
             return (
-              <a key={String(id)} href={`#${id}`} className={route === id ? "active" : ""} aria-current={route === id ? "page" : undefined}>
-                <NavIcon size={19} /><span>{String(label)}</span>
-                {id === "notifications" && unread > 0 && <span className="nav-count">{unread}</span>}
+              <a
+                key={String(id)}
+                href={`#${id}`}
+                className={route === id ? "active" : ""}
+                aria-current={route === id ? "page" : undefined}
+              >
+                <NavIcon size={19} />
+                <span>{String(label)}</span>
+                {id === "notifications" && unread > 0 && (
+                  <span className="nav-count">{unread}</span>
+                )}
               </a>
             );
           })}
         </nav>
         <div className="real-profile">
           <span className="avatar">{initials || "MS"}</span>
-          <div><strong>{props.user.name}</strong><span>{props.user.email}</span></div>
+          <div>
+            <strong>{props.user.name}</strong>
+            <span>{props.user.email}</span>
+          </div>
           {props.signOutControl}
         </div>
       </aside>
       <div className="real-shell-main">
         <header className="topbar real-topbar">
-          <div className="breadcrumb">Workspace <span>›</span><strong>{routeLabels[route]}</strong></div>
+          <div className="breadcrumb">
+            Workspace <span>›</span>
+            <strong>{routeLabels[route]}</strong>
+          </div>
           <div className="top-actions">
-            <span className={`demo-pill real-status-pill ${connected ? "connected" : ""}`}><span className="connection-dot connected" />{connected ? "Gmail connected" : "Private workspace"}</span>
-            <a href="#notifications" className="bell-button" aria-label={`Notifications, ${unread} unread`}><Bell size={20} />{unread > 0 && <i />}</a>
+            <span
+              className={`demo-pill real-status-pill ${connected ? "connected" : ""}`}
+            >
+              <span className="connection-dot connected" />
+              {connected ? "Gmail connected" : "Private workspace"}
+            </span>
+            <a
+              href="#notifications"
+              className="bell-button"
+              aria-label={`Notifications, ${unread} unread`}
+            >
+              <Bell size={20} />
+              {unread > 0 && <i />}
+            </a>
             <span className="avatar small">{initials || "MS"}</span>
           </div>
         </header>
         <main className="real-main" id="real-main-content" tabIndex={-1}>
-          {props.notice && <div className="notice" role="status">{props.notice}</div>}
-          {!props.aiConfigured && <div className="notice error" role="status">AI analysis is not configured. Deterministic checks and EML parsing remain available.</div>}
-          {props.connection?.lastErrorMessage && <div className="notice error" role="alert">{props.connection.lastErrorMessage}</div>}
-          {notificationError && <div className="notice error" role="alert">{notificationError}</div>}
+          {props.notice && (
+            <div className="notice" role="status">
+              {props.notice}
+            </div>
+          )}
+          {!props.aiConfigured && (
+            <div className="notice error" role="status">
+              AI analysis is not configured. Deterministic checks and EML
+              parsing remain available.
+            </div>
+          )}
+          {props.connection?.lastErrorMessage && (
+            <div className="notice error" role="alert">
+              {props.connection.lastErrorMessage}
+            </div>
+          )}
+          {notificationError && (
+            <div className="notice error" role="alert">
+              {notificationError}
+            </div>
+          )}
           {route === "overview" ? (
-            <Overview emails={props.emails} total={props.total} stats={props.stats} />
+            <Overview
+              emails={props.emails}
+              total={props.total}
+              stats={props.stats}
+            />
           ) : route === "emails" ? (
             <EmailBrowser emails={props.emails} />
           ) : route === "notifications" ? (
-            <NotificationsView notifications={notifications} onRead={(id) => markNotifications(id)} onReadAll={() => markNotifications()} busy={notificationBusy} />
+            <NotificationsView
+              notifications={notifications}
+              onRead={(id) => markNotifications(id)}
+              onReadAll={() => markNotifications()}
+              busy={notificationBusy}
+            />
           ) : (
-            <SettingsView connection={props.connection} userSettings={props.userSettings} aiConfigured={props.aiConfigured} usage={props.usage} />
+            <SettingsView
+              connection={props.connection}
+              userSettings={props.userSettings}
+              aiConfigured={props.aiConfigured}
+              usage={props.usage}
+              pubsubConfigured={props.pubsubConfigured}
+              monitoringActivity={props.monitoringActivity}
+            />
           )}
         </main>
-        <footer>MailShield AI <span>Private workspace · User-initiated analysis</span></footer>
+        <footer>
+          MailShield AI <span>Private workspace · Consent-based analysis</span>
+        </footer>
       </div>
     </div>
   );
